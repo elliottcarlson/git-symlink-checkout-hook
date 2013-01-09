@@ -1,0 +1,51 @@
+#!/bin/sh 
+# 
+# Post checkout script to fix issue when pulling down symlinks via git on a 
+# Windows machine. Checks for all files marked as a symlink, removes them and 
+# creates a native symlink instead. To prevent commit or future pull issues, 
+# this script marks the newly created symlink as unchanged. 
+# 
+############################################################################## 
+ 
+## Ensure that this script only executes when on Windows under MINGW32 
+sys_uname=$(uname) 
+if [[ $sys_uname == *MINGW32* ]] 
+then 
+    ## Get a listing of all files in the current repo that are symlinks. 
+    symlinked_files=$(git ls-files -s | awk '/120000/{print $4}') 
+ 
+    ## Loop through all symlinks in the checkout 
+    for symlink in $symlinked_files 
+    do 
+        ## Only continue if the symlink file exists and is a regular file - not a directory 
+        if [ -f $symlink ] 
+        then 
+            ## Current working directory to return to 
+            cwd=`pwd -W` 
+            cwd=${cwd//\//\\} 
+ 
+            ## Get the symlinks directory and filename 
+            dirname=${symlink%/*} 
+            filename=${symlink##*/} 
+ 
+            ## Change to the directory of the symlink 
+            cd $dirname 
+ 
+            ## Get the original symlink location, and convert it to a windows path 
+            symlink_dest=$(cat $filename) 
+            symlink_dest=${symlink_dest//\//\\} 
+ 
+            ## Delete the original symlink file 
+            rm -rf $filename 
+ 
+            ## Create the new symlink using the Windows symlink method of mklink 
+            silent_exec=$(cmd //C "mklink /D $filename $symlink_dest") 
+ 
+            ## Return to the original working directory 
+            cd "$cwd" 
+ 
+            ## Mark symlink as unchanged to prevent commit/pull conflicts 
+            git update-index --assume-unchanged $symlink 
+        fi 
+    done 
+fi 
